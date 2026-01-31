@@ -1,7 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
-use eframe::{self, CreationContext, egui};
-use egui::TextEdit;
+use eframe::{self, CreationContext, egui, Frame};
+use egui::{TextEdit, Ui};
 use egui_code_editor::{self, CodeEditor, ColorTheme, Completer, Syntax, highlighting::Token};
 
 const THEMES: [ColorTheme; 8] = [
@@ -166,8 +166,8 @@ impl CodeEditorDemo {
     }
 }
 impl eframe::App for CodeEditorDemo {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        egui::SidePanel::left("theme_picker").show(ctx, |ui| {
+    fn ui(&mut self, ui: &mut Ui, _: &mut Frame) {
+        egui::Panel::left("theme_picker").show_inside(ui, |ui| {
             ui.heading("Theme");
             egui::ScrollArea::both().show(ui, |ui| {
                 for theme in THEMES.iter() {
@@ -175,6 +175,7 @@ impl eframe::App for CodeEditorDemo {
                         .selectable_value(&mut self.theme, *theme, theme.name())
                         .clicked()
                     {
+                        let ctx = ui.ctx();
                         if theme.is_dark() {
                             ctx.set_visuals(egui::Visuals::dark());
                         } else {
@@ -185,7 +186,7 @@ impl eframe::App for CodeEditorDemo {
             });
         });
 
-        egui::SidePanel::right("syntax_picker").show(ctx, |ui| {
+        egui::Panel::right("syntax_picker").show_inside(ui, |ui| {
             ui.horizontal(|h| {
                 h.heading("Syntax");
                 h.checkbox(&mut self.example, "Example");
@@ -207,7 +208,7 @@ impl eframe::App for CodeEditorDemo {
             });
         });
 
-        egui::CentralPanel::default().show(ctx, |ui| {
+        egui::CentralPanel::default().show_inside(ui, |ui| {
             ui.horizontal(|h| {
                 h.label("Numbering Shift");
                 h.add(egui::DragValue::new(&mut self.shift));
