@@ -33,6 +33,29 @@ impl From<&Syntax> for Trie {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum VariantClickSequence {
+    Idle, Clicked, Finished
+}
+impl VariantClickSequence
+{
+    fn process_click(&mut self) -> bool
+    {
+        match self {
+            VariantClickSequence::Clicked => {
+                *self = VariantClickSequence::Finished;
+                true
+            }
+            _ => { false }
+        }
+    }
+}
+impl Default for VariantClickSequence {
+    fn default() -> Self {
+        VariantClickSequence::Idle
+    }
+}
+
 #[derive(Default, Debug, Clone, PartialEq)]
 /// Code-completer with pop-up above CodeEditor.
 /// In future releases will be replaced with trait.
@@ -43,6 +66,7 @@ pub struct Completer {
     trie_syntax: Trie,
     trie_user: Option<Trie>,
     variant_id: usize,
+    variant_clicked: VariantClickSequence,
     completions: BTreeSet<String>,
 }
 
@@ -103,7 +127,7 @@ impl Completer {
                 } else {
                     self.variant_id.saturating_sub(1)
                 };
-            } else if i.consume_key(Modifiers::NONE, egui::Key::Tab) {
+            } else if self.variant_clicked.process_click() || i.consume_key(Modifiers::NONE, egui::Key::Tab) {
                 let completion = self
                     .completions
                     .iter()
@@ -123,8 +147,10 @@ impl Completer {
         fontsize: f32,
         editor_output: &mut TextEditOutput,
     ) {
-        if !editor_output.response.has_focus() {
-            return;
+        if matches!(self.variant_clicked, VariantClickSequence::Finished) {
+            self.variant_clicked = VariantClickSequence::Idle;
+            return; // By not drawing this frame, the completer will close and only re-open with a small delay in case
+                    // the inserted word is still a prefix. This should visually acknowledge the user click.
         }
         let ctx = editor_output.response.ctx.clone();
         let galley = &editor_output.galley;
@@ -224,7 +250,6 @@ impl Completer {
 
                                 let button = ui.add(
                                     egui::Button::new(colored_text)
-                                        .sense(Sense::empty())
                                         .frame(true)
                                         .fill(theme.bg())
                                         .stroke(if selected {
@@ -238,6 +263,13 @@ impl Completer {
                                 );
                                 if selected {
                                     button.scroll_to_me(None);
+                                }
+                                if button.hovered() {
+                                    self.variant_id = i;
+                                }
+                                if button.clicked() {
+                                    self.variant_clicked = VariantClickSequence::Clicked;
+                                    editor_output.response.request_focus();
                                 }
                             }
                         });
