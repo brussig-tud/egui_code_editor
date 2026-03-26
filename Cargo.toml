@@ -11,8 +11,8 @@ categories = ["gui", "text-editors"]
 keywords = ["egui", "GUI", "editor", "syntax", "highlighting"]
 
 [dependencies]
-egui = { git="https://github.com/emilk/egui.git", optional = true }
-serde = { version = "1", optional = true}
+egui = { version = "0.34", optional = true }
+serde = { version = "1", optional = true }
 
 [lib]
 name = "egui_code_editor"
@@ -33,5 +33,5 @@ name = "tui"
 test = true
 
 [dev-dependencies]
-eframe = {git="https://github.com/emilk/egui.git"}
+eframe = "0.34"
 colorful = "0.3"
