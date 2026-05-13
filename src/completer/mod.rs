@@ -2,9 +2,8 @@ mod trie;
 
 use crate::{ColorTheme, Syntax, Token, TokenType, format_token};
 use egui::{
-    Event, Frame, Modifiers, Sense, Stroke, TextBuffer,
-    text_edit::TextEditOutput,
-    text_selection::text_cursor_state::{ccursor_previous_word, find_line_start},
+    Event, Frame, Modifiers, Sense, Stroke, TextBuffer, text::CCursor, text_edit::TextEditOutput,
+    text_selection::text_cursor_state::ccursor_previous_word,
 };
 use std::collections::BTreeSet;
 use trie::Trie;
@@ -70,6 +69,7 @@ pub struct Completer {
     variant_id: usize,
     variant_clicked: VariantClickSequence,
     completions: BTreeSet<String>,
+    pub text_edit_id: Option<egui::Id>,
 }
 
 impl Completer {
@@ -101,6 +101,8 @@ impl Completer {
     /// If using Completer without CodeEditor this method should be called before text-editing widget.
     /// Up/Down arrows for selection, Tab for completion, Esc for hiding
     pub fn handle_input(&mut self, ctx: &egui::Context) {
+        ctx.memory_mut(|m| m.move_focus(egui::FocusDirection::None));
+
         if let Some(indent) = self.indent.as_mut()
             && !indent.is_empty()
         {
@@ -132,31 +134,38 @@ impl Completer {
             return;
         }
         let last = self.completions.len().saturating_sub(1);
-        ctx.input_mut(|i| {
-            if i.consume_key(Modifiers::NONE, egui::Key::Escape) {
-                self.ignore_cursor = Some(self.cursor);
-            } else if i.consume_key(Modifiers::NONE, egui::Key::ArrowDown) {
-                self.variant_id = if self.variant_id == last {
-                    0
-                } else {
-                    self.variant_id.saturating_add(1).min(last)
-                };
-            } else if i.consume_key(Modifiers::NONE, egui::Key::ArrowUp) {
-                self.variant_id = if self.variant_id == 0 {
-                    last
-                } else {
-                    self.variant_id.saturating_sub(1)
-                };
-            } else if self.variant_clicked.process_click() || i.consume_key(Modifiers::NONE, egui::Key::Tab) {
-                let completion = self
-                    .completions
-                    .iter()
-                    .nth(self.variant_id)
-                    .map(String::from)
-                    .unwrap_or_default();
-                i.events.push(Event::Paste(completion));
+        if ctx.input_mut(|i| i.consume_key(Modifiers::NONE, egui::Key::Escape)) {
+            self.ignore_cursor = Some(self.cursor);
+            if let Some(id) = self.text_edit_id {
+                ctx.memory_mut(|m| {
+                    m.request_focus(id);
+                });
             }
-        });
+        } else {
+            ctx.input_mut(|i| {
+                if i.consume_key(Modifiers::NONE, egui::Key::ArrowDown) {
+                    self.variant_id = if self.variant_id == last {
+                        0
+                    } else {
+                        self.variant_id.saturating_add(1).min(last)
+                    };
+                } else if i.consume_key(Modifiers::NONE, egui::Key::ArrowUp) {
+                    self.variant_id = if self.variant_id == 0 {
+                        last
+                    } else {
+                        self.variant_id.saturating_sub(1)
+                    };
+                } else if self.variant_clicked.process_click() || i.consume_key(Modifiers::NONE, egui::Key::Tab) {
+                    let completion = self
+                        .completions
+                        .iter()
+                        .nth(self.variant_id)
+                        .map(String::from)
+                        .unwrap_or_default();
+                    i.events.push(Event::Paste(completion));
+                }
+            });
+        }
     }
 
     /// If using Completer without CodeEditor this method should be called after text-editing widget as it uses &mut TextEditOutput
@@ -167,16 +176,20 @@ impl Completer {
         fontsize: f32,
         editor_output: &mut TextEditOutput,
     ) {
+        let ctx = editor_output.response.ctx.clone();
+        /*if !editor_output.response.has_focus() { // <- why is this needed? Doesn't seem to change anything, except
+            return;                                //    preventing us from receiving clicks!
+        }*/
         if matches!(self.variant_clicked, VariantClickSequence::Finished) {
             self.variant_clicked = VariantClickSequence::Idle;
             return; // By not drawing this frame, the completer will close and only re-open with a small delay in case
                     // the inserted word is still a prefix. This should visually acknowledge the user click.
         }
-        let ctx = editor_output.response.ctx.clone();
+
         let galley = &editor_output.galley;
 
         if editor_output.response.changed() {
-            // Update Competer Dictionary
+            // Update Completer Dictionary
             if let Some(trie_user) = self.trie_user.as_mut() {
                 trie_user.clear();
                 Token::default()
@@ -190,7 +203,8 @@ impl Completer {
         // Auto-Completer
         let cursor_range = editor_output.state.cursor.char_range();
         if let Some(range) = cursor_range {
-            let cursor = range.primary;
+            let mut cursor = range.primary;
+            cursor.index = cursor.index.min(galley.job.text.chars().count());
             let cursor_pos_in_galley = galley.pos_from_cursor(cursor);
             let cursor_rect =
                 cursor_pos_in_galley.translate(editor_output.response.rect.left_top().to_vec2());
@@ -219,7 +233,7 @@ impl Completer {
 
             // Preserve Line indentation
             if let Some(indent) = self.indent.as_mut() {
-                let line_start = find_line_start(galley.text(), cursor);
+                let line_start = find_line_start_saturated(galley.text(), cursor);
                 *indent = galley
                     .text()
                     .char_range(line_start.index..cursor.index)
@@ -250,6 +264,7 @@ impl Completer {
                     cursor_rect,
                     editor_output.response.layer_id,
                 )
+                .kind(egui::PopupKind::Tooltip)
                 .frame(Frame::popup(&ctx.global_style()).fill(theme.bg()))
                 .sense(Sense::empty())
                 .show(|ui| {
@@ -322,5 +337,20 @@ impl Completer {
         let mut output = widget(ui);
         self.show(syntax, theme, fontsize, &mut output);
         output
+    }
+}
+
+pub fn find_line_start_saturated(text: &str, current_index: CCursor) -> CCursor {
+    let chars_count = text.chars().count();
+
+    let position = text
+        .chars()
+        .rev()
+        .skip(chars_count.saturating_sub(current_index.index))
+        .position(|x| x == '\n');
+
+    match position {
+        Some(pos) => CCursor::new(current_index.index.saturating_sub(pos)),
+        None => CCursor::new(0),
     }
 }

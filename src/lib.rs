@@ -113,6 +113,7 @@ pub struct CodeEditor {
     stick_to_bottom: bool,
     desired_width: f32,
     wrap: bool,
+    hint_text: Option<String>,
 }
 
 #[cfg(feature = "editor")]
@@ -142,6 +143,7 @@ impl Default for CodeEditor {
             stick_to_bottom: false,
             desired_width: f32::INFINITY,
             wrap: false,
+            hint_text: None,
         }
     }
 }
@@ -267,6 +269,16 @@ impl CodeEditor {
         }
     }
 
+    pub fn hint_text<S: Into<String>>(self, hint_text: S) -> Self {
+        let hint_text = hint_text.into();
+        let rows = self.rows.max(hint_text.lines().count());
+        CodeEditor {
+            hint_text: Some(hint_text),
+            rows,
+            ..self
+        }
+    }
+
     #[cfg(feature = "egui")]
     pub fn format_token(&self, ty: TokenType) -> egui::text::TextFormat {
         format_token(&self.theme, self.fontsize, ty)
@@ -341,6 +353,7 @@ impl CodeEditor {
     ) -> TextEditOutput {
         completer.handle_input(ui.ctx());
         let mut editor_output = self.show(ui, text);
+        completer.text_edit_id = Some(editor_output.response.id);
         completer.show(&self.syntax, &self.theme, self.fontsize, &mut editor_output);
         editor_output
     }
@@ -363,21 +376,26 @@ impl CodeEditor {
                         .show(h, |ui| {
                             let mut layouter =
                                 |ui: &egui::Ui, text_buffer: &dyn TextBuffer, wrap_width: f32| {
-                                    let mut layout_job =
-                                        highlight(ui.ctx(), self, text_buffer.as_str());
+                                    let text_str = text_buffer.as_str();
+                                    let mut layout_job = highlight(ui.ctx(), self, text_str);
+
                                     if !self.numlines && self.wrap {
                                         layout_job.wrap =
                                             egui::text::TextWrapping::wrap_at_width(wrap_width);
                                     }
                                     ui.fonts_mut(|f| f.layout_job(layout_job))
                                 };
-                            let output = egui::TextEdit::multiline(text)
+
+                            let mut text_edit = egui::TextEdit::multiline(text)
                                 .id_source(&self.id)
                                 .lock_focus(true)
                                 .desired_rows(self.rows)
                                 .desired_width(self.desired_width)
-                                .layouter(&mut layouter)
-                                .show(ui);
+                                .layouter(&mut layouter);
+                            if let Some(hint) = self.hint_text.as_ref() {
+                                text_edit = text_edit.hint_text(hint);
+                            }
+                            let output = text_edit.show(ui);
                             text_edit_output = Some(output);
                         });
                 });
