@@ -105,7 +105,9 @@ impl SyntaxDemo {
             "Assembly" => Syntax::asm(),
             "Lua" => Syntax::lua(),
             "Python" => Syntax::python(),
-            "Rust" => Syntax::rust(),
+            "Rust" => Syntax::rust()
+                .with_word_start(['#'])
+                .with_hyperlinks(["www", "http"]),
             "Shell" => Syntax::shell(),
             "SQL" => Syntax::sql(),
             _ => Syntax::shell(),
@@ -221,14 +223,13 @@ impl eframe::App for CodeEditorDemo {
                 .with_rows(10)
                 .with_fontsize(14.0)
                 .with_theme(self.theme)
-                .with_syntax(self.syntax.to_owned())
                 .with_numlines(true)
                 .with_numlines_shift(self.shift)
                 .with_numlines_only_natural(self.numlines_only_natural)
                 .hint_text("Hint text if Editor is empty")
                 .vscroll(true);
 
-            editor.show_with_completer(ui, &mut self.code, &mut self.completer);
+            editor.show_with_completer(ui, &mut self.code, &self.syntax, &mut self.completer);
 
             ui.separator();
             ui.horizontal(|h| {
