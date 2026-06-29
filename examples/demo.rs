@@ -2,7 +2,9 @@
 
 use eframe::{self, CreationContext, egui};
 use egui::TextEdit;
-use egui_code_editor::{self, CodeEditor, ColorTheme, Completer, Syntax, highlighting::Token};
+use egui_code_editor::{
+    self, CodeEditor, ColorTheme, Completer, Syntax, highlighting::Token, push_dropped_files,
+};
 
 const THEMES: [ColorTheme; 8] = [
     ColorTheme::AYU,
@@ -105,9 +107,8 @@ impl SyntaxDemo {
             "Assembly" => Syntax::asm(),
             "Lua" => Syntax::lua(),
             "Python" => Syntax::python(),
-            "Rust" => Syntax::rust()
-                .with_word_start(['#'])
-                .with_hyperlinks(["www", "http"]),
+            "Rust" => Syntax::rust().with_word_start(['#']),
+            // .with_hyperlinks(["www.", "http:"]),
             "Shell" => Syntax::shell(),
             "SQL" => Syntax::sql(),
             _ => Syntax::shell(),
@@ -171,7 +172,9 @@ impl CodeEditorDemo {
 }
 impl eframe::App for CodeEditorDemo {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        egui::Panel::left("theme_picker").show_inside(ui, |ui| {
+        let was_dnd = push_dropped_files(ui, &mut self.code);
+
+        egui::Panel::left("theme_picker").show(ui, |ui| {
             ui.heading("Theme");
             egui::ScrollArea::both().show(ui, |ui| {
                 for theme in THEMES.iter() {
@@ -189,7 +192,7 @@ impl eframe::App for CodeEditorDemo {
             });
         });
 
-        egui::Panel::right("syntax_picker").show_inside(ui, |ui| {
+        egui::Panel::right("syntax_picker").show(ui, |ui| {
             ui.horizontal(|h| {
                 h.heading("Syntax");
                 h.checkbox(&mut self.example, "Example");
@@ -211,7 +214,7 @@ impl eframe::App for CodeEditorDemo {
             });
         });
 
-        egui::CentralPanel::default().show_inside(ui, |ui| {
+        egui::CentralPanel::default().show(ui, |ui| {
             ui.horizontal(|h| {
                 h.label("Numbering Shift");
                 h.add(egui::DragValue::new(&mut self.shift));
@@ -229,8 +232,11 @@ impl eframe::App for CodeEditorDemo {
                 .hint_text("Hint text if Editor is empty")
                 .vscroll(true);
 
-            editor.show_with_completer(ui, &mut self.code, &self.syntax, &mut self.completer);
-
+            let mut resp =
+                editor.show_with_completer(ui, &mut self.code, &self.syntax, &mut self.completer);
+            if was_dnd {
+                resp.response.mark_changed();
+            }
             ui.separator();
             ui.horizontal(|h| {
                 h.label("Auto-complete TextEdit::singleLine");

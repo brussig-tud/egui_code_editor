@@ -1,6 +1,8 @@
 use crate::highlighting::Links;
 use egui::{Pos2, Rect, text_edit::TextEditOutput};
 
+pub const SPACE_HOLDER: &str = "␣";
+
 pub fn handle_links(text_edit: &TextEditOutput, links: &Links) {
     if !text_edit.response.contains_pointer() {
         return;
@@ -20,7 +22,7 @@ pub fn handle_links(text_edit: &TextEditOutput, links: &Links) {
             let cursors = (link_start..=link_end)
                 .map(|index| {
                     galley.pos_from_cursor(egui::text::CCursor {
-                        index,
+                        index: index.into(),
                         prefer_next_row: false,
                     })
                 })
@@ -30,17 +32,28 @@ pub fn handle_links(text_edit: &TextEditOutput, links: &Links) {
                 if ctx.pointer_hover_pos().is_some_and(|p| rect.contains(p)) {
                     ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
 
-                    let url = if url.starts_with("www") {
-                        format!("https://{url}")
-                    } else {
-                        url.to_string()
-                    };
-
                     if ctx.input(|r| r.pointer.primary_pressed()) {
-                        ctx.open_url(egui::OpenUrl {
-                            url: url.clone(),
-                            new_tab: true,
-                        });
+                        if url.to_lowercase().starts_with("file://") {
+                            let path = &url[7..].replace(SPACE_HOLDER, " ");
+                            opener::open(path)
+                                .inspect_err(|e| {
+                                    if cfg!(debug_assertions) {
+                                        println!("{e:?}");
+                                    }
+                                })
+                                .ok();
+                        } else {
+                            let url = if url.to_lowercase().starts_with("www") {
+                                format!("https://{url}")
+                            } else {
+                                url.to_string()
+                            };
+
+                            ctx.open_url(egui::OpenUrl {
+                                url: url.clone(),
+                                new_tab: true,
+                            });
+                        }
                     }
                 }
             }

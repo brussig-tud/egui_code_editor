@@ -2,7 +2,9 @@ mod trie;
 
 use crate::{ColorTheme, Syntax, Token, TokenType, format_token};
 use egui::{
-    Event, Frame, Modifiers, Sense, Stroke, TextBuffer, text::CCursor, text_edit::TextEditOutput,
+    Event, Frame, Modifiers, Sense, Stroke, TextBuffer,
+    text::{CCursor, CharIndex},
+    text_edit::TextEditOutput,
     text_selection::text_cursor_state::ccursor_previous_word,
 };
 use std::collections::BTreeSet;
@@ -61,9 +63,9 @@ impl Default for VariantClickSequence {
 /// In future releases will be replaced with trait.
 pub struct Completer {
     prefix: String,
-    cursor: usize,
+    cursor: CharIndex,
     indent: Option<String>,
-    ignore_cursor: Option<usize>,
+    ignore_cursor: Option<CharIndex>,
     trie_syntax: Trie,
     trie_user: Option<Trie>,
     variant_id: usize,
@@ -176,6 +178,12 @@ impl Completer {
         fontsize: f32,
         editor_output: &mut TextEditOutput,
     ) {
+        self.text_edit_id = editor_output
+            .response
+            .has_focus()
+            .then_some(editor_output.response.id)
+            .or(self.text_edit_id);
+
         let ctx = editor_output.response.ctx.clone();
         /*if !editor_output.response.has_focus() { // <- why is this needed? Doesn't seem to change anything, except
             return;                                //    preventing us from receiving clicks!
@@ -204,7 +212,7 @@ impl Completer {
         let cursor_range = editor_output.state.cursor.char_range();
         if let Some(range) = cursor_range {
             let mut cursor = range.primary;
-            cursor.index = cursor.index.min(galley.job.text.chars().count());
+            cursor.index = cursor.index.min(CharIndex(galley.job.text.chars().count()));
             let cursor_pos_in_galley = galley.pos_from_cursor(cursor);
             let cursor_rect =
                 cursor_pos_in_galley.translate(editor_output.response.rect.left_top().to_vec2());
@@ -227,7 +235,7 @@ impl Completer {
             }
             let next_char_allows = galley
                 .chars()
-                .nth(cursor.index)
+                .nth(cursor.index.into())
                 .is_none_or(|c| !(c.is_alphanumeric() || c == '_' || syntax.is_word_start(&c)))
                 || (range.secondary.index > range.primary.index);
 
@@ -346,7 +354,7 @@ pub fn find_line_start_saturated(text: &str, current_index: CCursor) -> CCursor 
     let position = text
         .chars()
         .rev()
-        .skip(chars_count.saturating_sub(current_index.index))
+        .skip(chars_count.saturating_sub(current_index.index.into()))
         .position(|x| x == '\n');
 
     match position {
