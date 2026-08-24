@@ -474,9 +474,8 @@ pub fn push_dropped_files(ui: &mut egui::Ui, text: &mut String) -> bool {
                 .dropped_files
                 .iter()
                 .filter_map(|p| {
-                    p.path
-                        .as_ref()
-                        .and_then(|p| p.to_str())
+                    p.path()
+                        .to_str()
                         .map(|s| format!("file://{}", s.replace(' ', SPACE_HOLDER)))
                 })
                 .collect::<Vec<String>>()
